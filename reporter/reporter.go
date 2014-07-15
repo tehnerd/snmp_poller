@@ -1,7 +1,6 @@
 package reporter
 
 import (
-	"fmt"
 	"net"
 	"snmp_poller/db_handler"
 	"snmp_poller/netutils"
@@ -46,7 +45,6 @@ func QstatReporter(reporter_chan chan QueueStat,
 		interface_info.Ifindex = QStat.Ifindex
 		db_chan <- interface_info
 		intf_name := <-name
-		fmt.Println(intf_name)
 		select {
 		case <-feedback_chan:
 			feedback_chan <- 1
