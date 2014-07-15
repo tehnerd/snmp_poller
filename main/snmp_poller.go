@@ -10,6 +10,7 @@ import (
 	"snmp_poller/reporter"
 	"strconv"
 	"strings"
+	"time"
 )
 
 func ReadConfig() ([]cfg.RouterDescr, []string, int) {
@@ -50,17 +51,22 @@ func main() {
 	name_chan := make(chan string)
 	go db_handler.GetInterfaceNameSQLite(db_chan, os.Args[2], name_chan)
 	go reporter.QstatReporter(reporter_chan, db_chan, name_chan)
-	for cntr := 0; cntr < len(rlist); {
-		if running_pollers < MAX_POLLERS {
-			go queue_stats.SNMPPoll(rlist[cntr], sync, reporter_chan)
-			cntr++
-			running_pollers += 1
-		} else {
-			<-sync
-			running_pollers -= 1
-		}
-	}
-	for cntr := 0; cntr < running_pollers; cntr++ {
-		<-sync
+	for {
+		go func() {
+			for cntr := 0; cntr < len(rlist); {
+				if running_pollers < MAX_POLLERS {
+					go queue_stats.SNMPPoll(rlist[cntr], sync, reporter_chan)
+					cntr++
+					running_pollers += 1
+				} else {
+					<-sync
+					running_pollers -= 1
+				}
+			}
+			for cntr := 0; cntr < running_pollers; cntr++ {
+				<-sync
+			}
+		}()
+		time.Sleep(5 * time.Minute)
 	}
 }
