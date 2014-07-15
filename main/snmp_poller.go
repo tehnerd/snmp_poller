@@ -13,10 +13,11 @@ import (
 	"time"
 )
 
-func ReadConfig() ([]cfg.RouterDescr, []string, int) {
+func ReadConfig() ([]cfg.RouterDescr, []string, int, int) {
 	var rlist []cfg.RouterDescr
 	var tasks []string
 	pollers := 10
+	timeout := 90
 	fd, err := os.Open(os.Args[1])
 	defer fd.Close()
 	cfg_reader := bufio.NewReader(fd)
@@ -29,19 +30,21 @@ func ReadConfig() ([]cfg.RouterDescr, []string, int) {
 			}
 		} else if fields[0] == "pollers:" {
 			pollers, _ = strconv.Atoi(fields[1])
+		} else if fields[0] == "timeout:" {
+			timeout, _ = strconv.Atoi(fields[1])
 		} else {
 			rlist = append(rlist, cfg.RouterDescr{fields[0], fields[1], fields[2]})
 		}
 		line, err = cfg_reader.ReadString('\n')
 	}
-	return rlist, tasks, pollers
+	return rlist, tasks, pollers, timeout
 }
 
 func main() {
 	if len(os.Args) < 3 {
 		os.Exit(1)
 	}
-	rlist, tasks, MAX_POLLERS := ReadConfig()
+	rlist, tasks, MAX_POLLERS, timeout := ReadConfig()
 	fmt.Println(tasks)
 	fmt.Println(MAX_POLLERS)
 	sync := make(chan int)
@@ -55,7 +58,7 @@ func main() {
 		go func() {
 			for cntr := 0; cntr < len(rlist); {
 				if running_pollers < MAX_POLLERS {
-					go queue_stats.SNMPPoll(rlist[cntr], sync, reporter_chan)
+					go queue_stats.SNMPPoll(rlist[cntr], sync, reporter_chan, timeout)
 					cntr++
 					running_pollers += 1
 				} else {

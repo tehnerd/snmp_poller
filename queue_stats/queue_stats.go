@@ -9,11 +9,12 @@ import (
 	"github.com/tehnerd/gosnmp"
 )
 
-func SNMPPoll(RDescr cfg.RouterDescr, sync chan int, reporter_chan chan reporter.QueueStat) {
-	s, _ := gosnmp.NewGoSNMP(RDescr.Name, RDescr.Community, gosnmp.Version2c, 40)
+func SNMPPoll(RDescr cfg.RouterDescr, sync chan int, reporter_chan chan reporter.QueueStat,
+	timeout int) {
+	s, _ := gosnmp.NewGoSNMP(RDescr.Name, RDescr.Community, gosnmp.Version2c, int64(timeout))
 	switch RDescr.Vendor {
 	case "Huawei":
-		resp, err := s.BulkWalk(30, ".1.3.6.1.4.1.2011.5.25.32.4.1.4.3.3.1.")
+		resp, err := s.BulkWalk(40, ".1.3.6.1.4.1.2011.5.25.32.4.1.4.3.3.1")
 		if err != nil {
 			sync <- 1
 		}
