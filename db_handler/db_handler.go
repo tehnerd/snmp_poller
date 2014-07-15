@@ -1,7 +1,6 @@
 package db_handler
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/mxk/go-sqlite/sqlite3"
@@ -19,7 +18,6 @@ func GetInterfaceNameSQLite(interface_info chan InterfaceInfo, db_location strin
 	var intf_name string
 	defer db_conn.Close()
 	if err != nil {
-		fmt.Println(err)
 		panic("cant open db")
 	}
 	sql := "select intfname from ifindex where rname=? and ifindex=?"
@@ -34,12 +32,10 @@ func GetInterfaceNameSQLite(interface_info chan InterfaceInfo, db_location strin
 					continue
 				}
 			} else {
-				fmt.Println("not exist")
 				InterfaceDict[intf.Hostname] = make(map[string]string)
 			}
 			query, err := db_conn.Query(sql, intf.Hostname, intf.Ifindex)
 			if err != nil {
-				fmt.Println(err)
 				name <- "NaN"
 				continue
 			}

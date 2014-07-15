@@ -1,10 +1,12 @@
 package reporter
 
 import (
-	"fmt"
+	"net"
 	"snmp_poller/db_handler"
+	"snmp_poller/netutils"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type QueueStat struct {
@@ -15,24 +17,10 @@ type QueueStat struct {
 	Action   string
 }
 
-type ReportStruct struct {
-	CS1        int64
-	CS2        int64
-	CS3        int64
-	CS4        int64
-	CS5        int64
-	CS6        int64
-	LocalSite  string
-	RemoteSite string
-}
-
-func GenerateMsg(key string, report ReportStruct, time string) []byte {
-	msg := strings.Join([]string{strings.Join([]string{key, "CS1"}, "."), strconv.FormatInt(report.CS1, 10), time, "\n",
-		strings.Join([]string{key, "CS2"}, "."), strconv.FormatInt(report.CS2, 10), time, "\n",
-		strings.Join([]string{key, "CS3"}, "."), strconv.FormatInt(report.CS3, 10), time, "\n",
-		strings.Join([]string{key, "CS4"}, "."), strconv.FormatInt(report.CS4, 10), time, "\n",
-		strings.Join([]string{key, "CS5"}, "."), strconv.FormatInt(report.CS5, 10), time, "\n",
-		strings.Join([]string{key, "CS6"}, "."), strconv.FormatInt(report.CS6, 10), time, "\n"}, " ")
+func GenerateQueueMsg(intf_name string, QStat QueueStat) []byte {
+	time := strconv.FormatInt(time.Now().Unix(), 10)
+	msg := strings.Join([]string{strings.Join([]string{"snmp.5m.queue", QStat.Hostname, intf_name,
+		QStat.Action, QStat.QueueNum}, "."), strconv.FormatInt(QStat.Counter, 10), time, "\n"}, " ")
 	return []byte(msg)
 }
 
@@ -40,52 +28,30 @@ func QstatReporter(reporter_chan chan QueueStat,
 	db_chan chan db_handler.InterfaceInfo,
 	name chan string) {
 	var interface_info db_handler.InterfaceInfo
+	write_chan := make(chan []byte)
+	feedback_chan := make(chan int)
+	var reporterAddr net.TCPAddr
+	reporterAddr.IP = net.ParseIP("127.0.0.1")
+	reporterAddr.Port, _ = strconv.Atoi("2003")
+	sock, err := net.DialTCP("tcp", nil, &reporterAddr)
+	if err != nil {
+		panic("cant connect to graphite server")
+	}
+	go netutils.WriteToTCP(sock, write_chan, feedback_chan)
+
 	for {
 		QStat := <-reporter_chan
 		interface_info.Hostname = QStat.Hostname
 		interface_info.Ifindex = QStat.Ifindex
 		db_chan <- interface_info
 		intf_name := <-name
-		fmt.Println(intf_name)
-	}
-}
-
-/*
-func CollectReportGraphite(report_chan chan []byte, cfg_dict cfg.CfgDict) {
-	write_chan := make(chan []byte)
-	feedback_chan := make(chan int)
-	var reporterAddr net.TCPAddr
-	fields := strings.Split(cfg_dict.Reporter, ":")
-	reporterAddr.IP = net.ParseIP(fields[0])
-	reporterAddr.Port, _ = strconv.Atoi(fields[1])
-	sock, err := net.DialTCP("tcp", nil, &reporterAddr)
-	if err != nil {
-		panic("cant connect to graphite server")
-	}
-	go netutils.WriteToTCP(sock, write_chan, feedback_chan)
-	for {
-		msg := <-report_chan
-		report_msg := &rtnm_pb.MSGS{}
-		proto.Unmarshal(msg, report_msg)
-		var report ReportStruct
-		report.CS1 = report_msg.GetRep().GetCS1()
-		report.CS2 = report_msg.GetRep().GetCS2()
-		report.CS3 = report_msg.GetRep().GetCS3()
-		report.CS4 = report_msg.GetRep().GetCS4()
-		report.CS5 = report_msg.GetRep().GetCS5()
-		report.CS6 = report_msg.GetRep().GetCS6()
-		report.LocalSite = report_msg.GetRep().GetLocalSite()
-		report.RemoteSite = report_msg.GetRep().GetRemoteSite()
-		key := strings.Join([]string{report.LocalSite, report.RemoteSite}, "-")
-		key = strings.Join([]string{"stats.RTT", key}, ".")
-		time := strconv.FormatInt(time.Now().Unix(), 10)
 		select {
 		case <-feedback_chan:
 			feedback_chan <- 1
 			go netutils.ReconnectTCPW(reporterAddr, write_chan, feedback_chan)
 		default:
-			write_chan <- GenerateMsg(key, report, time)
+			write_chan <- GenerateQueueMsg(intf_name, QStat)
 		}
+
 	}
 }
-*/
