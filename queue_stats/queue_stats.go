@@ -1,21 +1,40 @@
 package queue_stats
 
 import (
+	"fmt"
 	"regexp"
 	"snmp_poller/cfg"
 	"snmp_poller/reporter"
 	"strings"
+	"time"
 
-	"github.com/tehnerd/gosnmp"
+	"github.com/soniah/gosnmp"
 )
 
 func SNMPPoll(RDescr cfg.RouterDescr, sync chan int, reporter_chan chan reporter.QueueStat,
 	timeout int) {
-	s, _ := gosnmp.NewGoSNMP(RDescr.Name, RDescr.Community, gosnmp.Version2c, int64(timeout))
+	var TargetRouter gosnmp.GoSNMP
+	TargetRouter.Port = 161
+	TargetRouter.Community = RDescr.Community
+	TargetRouter.Version = gosnmp.Version2c
+	TargetRouter.Timeout = time.Duration(timeout) * time.Second
+	TargetRouter.Retries = 3
+	TargetRouter.Target = RDescr.Name
+	err := TargetRouter.Connect()
+	if err != nil {
+		sync <- 1
+		return
+	}
+	defer TargetRouter.Conn.Close()
+	if err != nil {
+		sync <- 1
+		return
+	}
 	switch RDescr.Vendor {
 	case "Huawei":
-		resp, err := s.BulkWalk(40, ".1.3.6.1.4.1.2011.5.25.32.4.1.4.3.3.1")
+		resp, err := TargetRouter.BulkWalkAll(".1.3.6.1.4.1.2011.5.25.32.4.1.4.3.3.1")
 		if err != nil {
+			fmt.Println(err)
 			sync <- 1
 		}
 		QueueStatsHuawei(resp, reporter_chan, RDescr.Name)

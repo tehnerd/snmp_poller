@@ -17,7 +17,7 @@ func ReadConfig() ([]cfg.RouterDescr, []string, int, int) {
 	var rlist []cfg.RouterDescr
 	var tasks []string
 	pollers := 10
-	timeout := 90
+	timeout := 10
 	fd, err := os.Open(os.Args[1])
 	defer fd.Close()
 	cfg_reader := bufio.NewReader(fd)
