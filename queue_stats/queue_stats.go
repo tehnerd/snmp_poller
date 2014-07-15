@@ -26,16 +26,15 @@ func SNMPPoll(RDescr cfg.RouterDescr, sync chan int, reporter_chan chan reporter
 		return
 	}
 	defer TargetRouter.Conn.Close()
-	if err != nil {
-		sync <- 1
-		return
-	}
 	switch RDescr.Vendor {
 	case "Huawei":
 		resp, err := TargetRouter.BulkWalkAll(".1.3.6.1.4.1.2011.5.25.32.4.1.4.3.3.1")
 		if err != nil {
 			fmt.Println(err)
-			sync <- 1
+			if len(resp) == 0 {
+				sync <- 1
+				return
+			}
 		}
 		QueueStatsHuawei(resp, reporter_chan, RDescr.Name)
 		sync <- 1
