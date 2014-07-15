@@ -12,13 +12,13 @@ import (
 )
 
 func SNMPPoll(RDescr cfg.RouterDescr, sync chan int, reporter_chan chan reporter.QueueStat,
-	timeout int) {
+	timeout int, retries int) {
 	var TargetRouter gosnmp.GoSNMP
 	TargetRouter.Port = 161
 	TargetRouter.Community = RDescr.Community
 	TargetRouter.Version = gosnmp.Version2c
 	TargetRouter.Timeout = time.Duration(timeout) * time.Second
-	TargetRouter.Retries = 3
+	TargetRouter.Retries = retries
 	TargetRouter.Target = RDescr.Name
 	err := TargetRouter.Connect()
 	if err != nil {
