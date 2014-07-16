@@ -10,7 +10,10 @@ import (
 	"snmp_poller/reporter"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
+
+	"github.com/tehnerd/go_pod"
 )
 
 func ReadConfig() ([]cfg.RouterDescr, []string, int, int, int) {
@@ -44,6 +47,31 @@ func ReadConfig() ([]cfg.RouterDescr, []string, int, int, int) {
 	return rlist, tasks, pollers, timeout, retries
 }
 
+//TODO: add cfg struct instead of sep values
+func StartPolling(rlist []cfg.RouterDescr, MAX_POLLERS int,
+	reporter_chan chan reporter.QueueStat,
+	timeout int, retries int, sync_flag *int32) {
+	atomic.AddInt32(sync_flag, 1)
+	running_pollers := 0
+	sync := make(chan int)
+	for cntr := 0; cntr < len(rlist); {
+		if running_pollers < MAX_POLLERS {
+			go queue_stats.SNMPPoll(rlist[cntr], sync, reporter_chan,
+				timeout, retries)
+			cntr++
+			running_pollers += 1
+		} else {
+			<-sync
+			running_pollers -= 1
+		}
+	}
+	for cntr := 0; cntr < running_pollers; cntr++ {
+		<-sync
+	}
+	atomic.AddInt32(sync_flag, -1)
+
+}
+
 func main() {
 	if len(os.Args) < 3 {
 		os.Exit(1)
@@ -51,30 +79,20 @@ func main() {
 	rlist, tasks, MAX_POLLERS, timeout, retries := ReadConfig()
 	fmt.Println(tasks)
 	fmt.Println(MAX_POLLERS)
-	sync := make(chan int)
-	running_pollers := 0
 	reporter_chan := make(chan reporter.QueueStat)
 	db_chan := make(chan db_handler.InterfaceInfo)
 	name_chan := make(chan string)
+	sync_flag := int32(0)
+	go go_pod.PanicOnDemand()
 	go db_handler.GetInterfaceNameSQLite(db_chan, os.Args[2], name_chan)
 	go reporter.QstatReporter(reporter_chan, db_chan, name_chan)
 	for {
-		go func() {
-			for cntr := 0; cntr < len(rlist); {
-				if running_pollers < MAX_POLLERS {
-					go queue_stats.SNMPPoll(rlist[cntr], sync, reporter_chan,
-						timeout, retries)
-					cntr++
-					running_pollers += 1
-				} else {
-					<-sync
-					running_pollers -= 1
-				}
-			}
-			for cntr := 0; cntr < running_pollers; cntr++ {
-				<-sync
-			}
-		}()
+		//protecting ourself against dead reporter(wont run unlim ammount of
+		//polling jobs, coz workers cant report anyway and will hang and report_chan <-
+		if !atomic.CompareAndSwapInt32(&sync_flag, 3, 3) {
+			go StartPolling(rlist, MAX_POLLERS, reporter_chan, timeout, retries,
+				&sync_flag)
+		}
 		time.Sleep(5 * time.Minute)
 	}
 }
