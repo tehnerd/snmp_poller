@@ -12,8 +12,6 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
-
-	"github.com/tehnerd/go_pod"
 )
 
 func ReadConfig() ([]cfg.RouterDescr, []string, int, int, int) {
@@ -83,7 +81,6 @@ func main() {
 	db_chan := make(chan db_handler.InterfaceInfo)
 	name_chan := make(chan string)
 	sync_flag := int32(0)
-	go go_pod.PanicOnDemand()
 	go db_handler.GetInterfaceNameSQLite(db_chan, os.Args[2], name_chan)
 	go reporter.QstatReporter(reporter_chan, db_chan, name_chan)
 	for {
