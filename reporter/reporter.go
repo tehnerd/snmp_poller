@@ -10,6 +10,7 @@ import (
 )
 
 type QueueStat struct {
+	Vendor   string
 	Hostname string
 	Ifindex  string
 	QueueNum string
@@ -17,9 +18,9 @@ type QueueStat struct {
 	Action   string
 }
 
-func GenerateQueueMsg(intf_name string, QStat QueueStat) []byte {
+func GenerateQueueMsg(QStat QueueStat) []byte {
 	time := strconv.FormatInt(time.Now().Unix(), 10)
-	msg := strings.Join([]string{strings.Join([]string{"snmp.5m.queue", QStat.Hostname, intf_name,
+	msg := strings.Join([]string{strings.Join([]string{"snmp.5m.queue", QStat.Hostname, QStat.Ifindex,
 		QStat.Action, QStat.QueueNum}, "."), strconv.FormatInt(QStat.Counter, 10), time, "\n"}, " ")
 	return []byte(msg)
 }
@@ -43,14 +44,21 @@ func QstatReporter(reporter_chan chan QueueStat,
 		QStat := <-reporter_chan
 		interface_info.Hostname = QStat.Hostname
 		interface_info.Ifindex = QStat.Ifindex
+		interface_info.InfoType = "intf"
 		db_chan <- interface_info
-		intf_name := <-name
+		QStat.Ifindex = <-name
+		if QStat.Vendor == "Juniper" {
+			interface_info.InfoType = "jqueue"
+			interface_info.QueueNum = QStat.QueueNum
+			db_chan <- interface_info
+			QStat.QueueNum = <-name
+		}
 		select {
 		case <-feedback_chan:
 			feedback_chan <- 1
 			go netutils.ReconnectTCPW(reporterAddr, write_chan, feedback_chan)
 		default:
-			write_chan <- GenerateQueueMsg(intf_name, QStat)
+			write_chan <- GenerateQueueMsg(QStat)
 		}
 
 	}
