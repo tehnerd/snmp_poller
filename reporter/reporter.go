@@ -70,8 +70,12 @@ type QueueMsg struct {
 	Data       []byte
 }
 
+//TODO: add logick for reconnection
 func SendToRedis(redisAddress string, dataChan chan QueueMsg) {
-	redisConnection, _ := redis.Dial("tcp", redisAddress)
+	redisConnection, err := redis.Dial("tcp", redisAddress)
+	if err != nil {
+		panic("cant connect to redis server")
+	}
 	for {
 		select {
 		case msg := <-dataChan:

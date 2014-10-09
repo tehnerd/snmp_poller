@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"fmt"
 	"os"
 	"snmp_poller/cfg"
 	"snmp_poller/db_handler"
@@ -38,9 +37,10 @@ func ReadConfig() ([]cfg.RouterDescr, cfg.GenericCfg) {
 			Cfg.Timeout, _ = strconv.Atoi(fields[1])
 		} else if fields[0] == "retries:" {
 			Cfg.Retries, _ = strconv.Atoi(fields[1])
-
 		} else if fields[0] == "graphite:" {
 			Cfg.GraphiteIP = fields[1]
+		} else if fields[0] == "redis:" {
+			Cfg.RedisAddr = fields[1]
 		} else {
 			rlist = append(rlist, cfg.RouterDescr{fields[0], fields[1], fields[2]})
 		}
@@ -49,17 +49,17 @@ func ReadConfig() ([]cfg.RouterDescr, cfg.GenericCfg) {
 	return rlist, Cfg
 }
 
-//TODO: add cfg struct instead of sep values
 func StartPolling(rlist []cfg.RouterDescr, MAX_POLLERS int,
 	reporter_chan chan reporter.QueueStat,
-	timeout int, retries int, sync_flag *int32) {
+	timeout int, retries int, sync_flag *int32,
+	redisChan chan reporter.QueueMsg) {
 	atomic.AddInt32(sync_flag, 1)
 	running_pollers := 0
 	sync := make(chan int)
 	for cntr := 0; cntr < len(rlist); {
 		if running_pollers < MAX_POLLERS {
 			go queue_stats.SNMPPoll(rlist[cntr], sync, reporter_chan,
-				timeout, retries)
+				timeout, retries, redisChan)
 			cntr++
 			running_pollers += 1
 		} else {
@@ -79,20 +79,20 @@ func main() {
 		os.Exit(1)
 	}
 	rlist, Cfg := ReadConfig()
-	fmt.Println(Cfg.Tasks)
-	fmt.Println(Cfg.Pollers)
 	reporter_chan := make(chan reporter.QueueStat)
 	db_chan := make(chan db_handler.InterfaceInfo)
+	redisChan := make(chan reporter.QueueMsg)
+	go reporter.SendToRedis(Cfg.RedisAddr, redisChan)
 	name_chan := make(chan string)
 	sync_flag := int32(0)
 	go db_handler.GetInterfaceNameSQLite(db_chan, os.Args[2], name_chan)
 	go reporter.QstatReporter(reporter_chan, db_chan, name_chan, Cfg.GraphiteIP)
 	for {
 		//protecting ourself against dead reporter(wont run unlim ammount of
-		//polling jobs, coz workers cant report anyway and will hang and report_chan <-
+		//polling jobs, coz workers cant report anyway and will hang at report_chan <-
 		if !atomic.CompareAndSwapInt32(&sync_flag, 3, 3) {
 			go StartPolling(rlist, Cfg.Pollers, reporter_chan, Cfg.Timeout, Cfg.Retries,
-				&sync_flag)
+				&sync_flag, redisChan)
 		}
 		time.Sleep(5 * time.Minute)
 	}

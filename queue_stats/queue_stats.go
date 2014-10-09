@@ -3,17 +3,17 @@ package queue_stats
 import (
 	"fmt"
 
+	"encoding/json"
+	"github.com/soniah/gosnmp"
 	"regexp"
 	"snmp_poller/cfg"
 	"snmp_poller/reporter"
 	"strings"
 	"time"
-
-	"github.com/soniah/gosnmp"
 )
 
 func SNMPPoll(RDescr cfg.RouterDescr, sync chan int, reporter_chan chan reporter.QueueStat,
-	timeout int, retries int) {
+	timeout int, retries int, redisChan chan reporter.QueueMsg) {
 	var TargetRouter gosnmp.GoSNMP
 	TargetRouter.Port = 161
 	TargetRouter.Community = RDescr.Community
@@ -38,7 +38,7 @@ func SNMPPoll(RDescr cfg.RouterDescr, sync chan int, reporter_chan chan reporter
 				return
 			}
 		}
-		QueueStatsHuawei(resp, reporter_chan, RDescr.Name, "Huawei")
+		QueueStatsHuawei(resp, reporter_chan, RDescr.Name, "Huawei", redisChan)
 		sync <- 1
 	case "Juniper":
 		resp, err := TargetRouter.BulkWalkAll(".1.3.6.1.4.1.2636.3.15.1.1")
@@ -56,12 +56,13 @@ func SNMPPoll(RDescr cfg.RouterDescr, sync chan int, reporter_chan chan reporter
 }
 
 func QueueStatsHuawei(response []gosnmp.SnmpPDU, reporter_chan chan reporter.QueueStat,
-	Hostname string, Vendor string) {
+	Hostname string, Vendor string, redisChan chan reporter.QueueMsg) {
 	pass_re, _ := regexp.Compile(`^5.(\d+).0.(\d+)$`)
 	drop_re, _ := regexp.Compile(`^9.(\d+).0.(\d+)$`)
 	var QStat reporter.QueueStat
 	QStat.Vendor = Vendor
 	QStat.Hostname = Hostname
+	ReportDict := make(map[string]int64)
 
 	for cntr := 0; cntr < len(response); cntr++ {
 		composite_oid := strings.Split(response[cntr].Name, ".1.3.6.1.4.1.2011.5.25.32.4.1.4.3.3.1.")
@@ -74,6 +75,11 @@ func QueueStatsHuawei(response []gosnmp.SnmpPDU, reporter_chan chan reporter.Que
 				queue_counter, ok := response[cntr].Value.(int64)
 				if ok {
 					if queue_counter != 0 {
+						if _, exist := ReportDict[ifindex]; exist {
+							ReportDict[ifindex] += queue_counter
+						} else {
+							ReportDict[ifindex] = queue_counter
+						}
 						QStat.Ifindex = ifindex
 						QStat.QueueNum = queue_num
 						QStat.Counter = queue_counter
@@ -98,6 +104,13 @@ func QueueStatsHuawei(response []gosnmp.SnmpPDU, reporter_chan chan reporter.Que
 			}
 
 		}
+	}
+	JsonData, err := json.Marshal(ReportDict)
+	if err == nil {
+		var Msg reporter.QueueMsg
+		Msg.RouterName = Hostname
+		Msg.Data = JsonData
+		redisChan <- Msg
 	}
 }
 
