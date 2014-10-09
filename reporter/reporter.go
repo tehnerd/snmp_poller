@@ -1,6 +1,7 @@
 package reporter
 
 import (
+	"github.com/garyburd/redigo/redis"
 	"net"
 	"snmp_poller/db_handler"
 	"snmp_poller/netutils"
@@ -27,12 +28,12 @@ func GenerateQueueMsg(QStat QueueStat) []byte {
 
 func QstatReporter(reporter_chan chan QueueStat,
 	db_chan chan db_handler.InterfaceInfo,
-	name chan string) {
+	name chan string, graphite_ip string) {
 	var interface_info db_handler.InterfaceInfo
 	write_chan := make(chan []byte)
 	feedback_chan := make(chan int)
 	var reporterAddr net.TCPAddr
-	reporterAddr.IP = net.ParseIP("127.0.0.1")
+	reporterAddr.IP = net.ParseIP(graphite_ip)
 	reporterAddr.Port, _ = strconv.Atoi("2003")
 	sock, err := net.DialTCP("tcp", nil, &reporterAddr)
 	if err != nil {
@@ -61,5 +62,22 @@ func QstatReporter(reporter_chan chan QueueStat,
 			write_chan <- GenerateQueueMsg(QStat)
 		}
 
+	}
+}
+
+type QueueMsg struct {
+	RouterName string
+	Data       []byte
+}
+
+func SendToRedis(redisAddress string, dataChan chan QueueMsg) {
+	redisConnection, _ := redis.Dial("tcp", redisAddress)
+	for {
+		select {
+		case msg := <-dataChan:
+			oldData, _ := redis.Bytes(redisConnection.Do("GET", msg.RouterName))
+			redisConnection.Do("SET", strings.Join([]string{msg.RouterName, "-old"}, ""), oldData)
+			redisConnection.Do("SET", msg.RouterName, msg.Data)
+		}
 	}
 }
