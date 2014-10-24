@@ -21,6 +21,7 @@ func SNMPPoll(RDescr cfg.RouterDescr, sync chan int, reporter_chan chan reporter
 	TargetRouter.Timeout = time.Duration(timeout) * time.Second
 	TargetRouter.Retries = retries
 	TargetRouter.Target = RDescr.Name
+	TargetRouter.MaxRepetitions = 30
 	//	TargetRouter.Logger = log.New(os.Stdout, "", 0)
 	err := TargetRouter.Connect()
 	if err != nil {
@@ -62,7 +63,7 @@ func QueueStatsHuawei(response []gosnmp.SnmpPDU, reporter_chan chan reporter.Que
 	var QStat reporter.QueueStat
 	QStat.Vendor = Vendor
 	QStat.Hostname = Hostname
-	ReportDict := make(map[string]int64)
+	ReportDict := make(map[string]map[string]int64)
 
 	for cntr := 0; cntr < len(response); cntr++ {
 		composite_oid := strings.Split(response[cntr].Name, ".1.3.6.1.4.1.2011.5.25.32.4.1.4.3.3.1.")
@@ -76,9 +77,10 @@ func QueueStatsHuawei(response []gosnmp.SnmpPDU, reporter_chan chan reporter.Que
 				if ok {
 					if queue_counter != 0 {
 						if _, exist := ReportDict[ifindex]; exist {
-							ReportDict[ifindex] += queue_counter
+							ReportDict[ifindex][queue_num] = queue_counter
 						} else {
-							ReportDict[ifindex] = queue_counter
+							ReportDict[ifindex] = make(map[string]int64)
+							ReportDict[ifindex][queue_num] = queue_counter
 						}
 						QStat.Ifindex = ifindex
 						QStat.QueueNum = queue_num
