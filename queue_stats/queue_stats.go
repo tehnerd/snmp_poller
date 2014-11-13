@@ -50,7 +50,7 @@ func SNMPPoll(RDescr cfg.RouterDescr, sync chan int, reporter_chan chan reporter
 				return
 			}
 		}
-		QueueStatsJuniper(resp, reporter_chan, RDescr.Name, "Juniper")
+		QueueStatsJuniper(resp, reporter_chan, RDescr.Name, "Juniper", redisChan)
 		sync <- 1
 
 	}
@@ -117,12 +117,13 @@ func QueueStatsHuawei(response []gosnmp.SnmpPDU, reporter_chan chan reporter.Que
 }
 
 func QueueStatsJuniper(response []gosnmp.SnmpPDU, reporter_chan chan reporter.QueueStat,
-	Hostname string, Vendor string) {
+	Hostname string, Vendor string, redisChan chan reporter.QueueMsg) {
 	pass_re, _ := regexp.Compile(`^9.(\d+).(.+)$`)
 	drop_re, _ := regexp.Compile(`^23.(\d+).(.+)$`)
 	var QStat reporter.QueueStat
 	QStat.Hostname = Hostname
 	QStat.Vendor = Vendor
+	ReportDict := make(map[string]map[string]int64)
 
 	for cntr := 0; cntr < len(response); cntr++ {
 		composite_oid := strings.Split(response[cntr].Name, ".1.3.6.1.4.1.2636.3.15.1.1.")
@@ -135,6 +136,12 @@ func QueueStatsJuniper(response []gosnmp.SnmpPDU, reporter_chan chan reporter.Qu
 				queue_counter, ok := response[cntr].Value.(int64)
 				if ok {
 					if queue_counter != 0 {
+						if _, exist := ReportDict[ifindex]; exist {
+							ReportDict[ifindex][queue_num] = queue_counter
+						} else {
+							ReportDict[ifindex] = make(map[string]int64)
+							ReportDict[ifindex][queue_num] = queue_counter
+						}
 						QStat.Ifindex = ifindex
 						QStat.QueueNum = queue_num
 						QStat.Counter = queue_counter
@@ -159,5 +166,12 @@ func QueueStatsJuniper(response []gosnmp.SnmpPDU, reporter_chan chan reporter.Qu
 			}
 
 		}
+	}
+	JsonData, err := json.Marshal(ReportDict)
+	if err == nil {
+		var Msg reporter.QueueMsg
+		Msg.RouterName = Hostname
+		Msg.Data = JsonData
+		redisChan <- Msg
 	}
 }
