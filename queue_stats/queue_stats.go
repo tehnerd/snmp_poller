@@ -41,6 +41,7 @@ func SNMPPoll(RDescr cfg.RouterDescr, sync chan int, reporter_chan chan reporter
 		}
 		QueueStatsHuawei(resp, reporter_chan, RDescr.Name, "Huawei", redisChan)
 		sync <- 1
+
 	case "Juniper":
 		resp, err := TargetRouter.BulkWalkAll(".1.3.6.1.4.1.2636.3.15.1.1")
 		if err != nil {
@@ -51,6 +52,18 @@ func SNMPPoll(RDescr cfg.RouterDescr, sync chan int, reporter_chan chan reporter
 			}
 		}
 		QueueStatsJuniper(resp, reporter_chan, RDescr.Name, "Juniper", redisChan)
+		sync <- 1
+
+	case "Cisco":
+		resp, err := TargetRouter.BulkWalkAll("1.3.6.1.4.1.9.9.166.1.15.1.1")
+		if err != nil {
+			fmt.Println(err)
+			if len(resp) == 0 {
+				sync <- 1
+				return
+			}
+		}
+		QueueStatsCisco(resp, reporter_chan, RDescr.Name, "Cisco", redisChan)
 		sync <- 1
 
 	}
@@ -158,6 +171,64 @@ func QueueStatsJuniper(response []gosnmp.SnmpPDU, reporter_chan chan reporter.Qu
 					if queue_counter != 0 {
 						QStat.Ifindex = ifindex
 						QStat.QueueNum = queue_num
+						QStat.Counter = queue_counter
+						QStat.Action = "drop"
+						reporter_chan <- QStat
+					}
+				}
+			}
+
+		}
+	}
+	JsonData, err := json.Marshal(ReportDict)
+	if err == nil {
+		var Msg reporter.QueueMsg
+		Msg.RouterName = Hostname
+		Msg.Data = JsonData
+		redisChan <- Msg
+	}
+}
+
+func QueueStatsCisco(response []gosnmp.SnmpPDU, reporter_chan chan reporter.QueueStat,
+	Hostname string, Vendor string, redisChan chan reporter.QueueMsg) {
+	pass_re, _ := regexp.Compile(`^10.(\d+.\d+)$`)
+	drop_re, _ := regexp.Compile(`^17.(\d+.\d+)$`)
+	var QStat reporter.QueueStat
+	QStat.Hostname = Hostname
+	QStat.Vendor = Vendor
+	ReportDict := make(map[string]map[string]int64)
+
+	for cntr := 0; cntr < len(response); cntr++ {
+		composite_oid := strings.Split(response[cntr].Name, "1.3.6.1.4.1.9.9.166.1.15.1.1.")
+		if len(composite_oid) > 1 {
+			oid := composite_oid[1]
+			if len(pass_re.FindAllStringSubmatch(oid, -1)) != 0 {
+				match := pass_re.FindAllStringSubmatch(oid, -1)
+				composite_ifindex := match[0][1]
+				queue_counter, ok := response[cntr].Value.(int64)
+				if ok {
+					if queue_counter != 0 {
+						if _, exist := ReportDict[composite_ifindex]; exist {
+							ReportDict[composite_ifindex]["1"] = queue_counter
+						} else {
+							ReportDict[composite_ifindex] = make(map[string]int64)
+							ReportDict[composite_ifindex]["1"] = queue_counter
+						}
+						QStat.Ifindex = composite_ifindex
+						QStat.QueueNum = "1"
+						QStat.Counter = queue_counter
+						QStat.Action = "pass"
+						reporter_chan <- QStat
+					}
+				}
+			} else if len(drop_re.FindAllStringSubmatch(oid, -1)) != 0 {
+				match := drop_re.FindAllStringSubmatch(oid, -1)
+				composite_ifindex := match[0][1]
+				queue_counter, ok := response[cntr].Value.(int64)
+				if ok {
+					if queue_counter != 0 {
+						QStat.Ifindex = composite_ifindex
+						QStat.QueueNum = "1"
 						QStat.Counter = queue_counter
 						QStat.Action = "drop"
 						reporter_chan <- QStat

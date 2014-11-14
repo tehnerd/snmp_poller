@@ -46,13 +46,24 @@ func QstatReporter(reporter_chan chan QueueStat,
 		interface_info.Hostname = QStat.Hostname
 		interface_info.Ifindex = QStat.Ifindex
 		interface_info.InfoType = "intf"
-		db_chan <- interface_info
-		QStat.Ifindex = <-name
+		if QStat.Vendor != "Cisco" {
+			db_chan <- interface_info
+			QStat.Ifindex = <-name
+		}
 		if QStat.Vendor == "Juniper" {
 			interface_info.InfoType = "jqueue"
 			interface_info.QueueNum = QStat.QueueNum
 			db_chan <- interface_info
 			QStat.QueueNum = <-name
+		} else if QStat.Vendor == "Cisco" {
+			interface_info.InfoType = "cqueue"
+			db_chan <- interface_info
+			compositeName := <-name
+			compositeNameList := strings.Split(compositeName, ".")
+			if len(compositeNameList) == 2 {
+				QStat.Ifindex = compositeNameList[0]
+				QStat.QueueNum = compositeNameList[1]
+			}
 		}
 		select {
 		case <-feedback_chan:

@@ -24,13 +24,14 @@ func GetInterfaceNameSQLite(interface_info chan InterfaceInfo, db_location strin
 	}
 	sql_intf := "select intfname from ifindex where rname=? and ifindex=?"
 	jqueue_name := "select queue_name from juniper_queue_name where queue_index=?"
+	cisco_name := "select queue_name from asr_queue_index where rname=? and queue_index=?"
 	for {
 		select {
 		case intf := <-interface_info:
 			hostname_dict, dict_exist := InterfaceDict[intf.Hostname]
 			if dict_exist {
 				switch intf.InfoType {
-				case "intf":
+				case "intf", "cqueue":
 					intf_name, intf_exist := hostname_dict[intf.Ifindex]
 					if intf_exist {
 						name <- intf_name
@@ -55,22 +56,33 @@ func GetInterfaceNameSQLite(interface_info chan InterfaceInfo, db_location strin
 					name <- "NaN"
 					continue
 				}
+
 			case "jqueue":
 				query, err = db_conn.Query(jqueue_name, intf.QueueNum)
 				if err != nil {
 					name <- "NaN"
 					continue
 				}
+
+			case "cqueue":
+				query, err = db_conn.Query(cisco_name, intf.Hostname, intf.Ifindex)
+				if err != nil {
+					name <- "NaN"
+					continue
+				}
 			}
+
 			query.Scan(&var_name)
 			if len(var_name) == 0 {
 				name <- "NaN"
 				continue
 			}
-			var_name = strings.Replace(var_name, "/", "-", -1)
-			var_name = strings.Replace(var_name, ".", "-", -1)
+			if intf.InfoType != "cqueue" {
+				var_name = strings.Replace(var_name, "/", "-", -1)
+				var_name = strings.Replace(var_name, ".", "-", -1)
+			}
 			switch intf.InfoType {
-			case "intf":
+			case "intf", "cqueue":
 				InterfaceDict[intf.Hostname][intf.Ifindex] = var_name
 			case "jqueue":
 				InterfaceDict[intf.Hostname][intf.QueueNum] = var_name
