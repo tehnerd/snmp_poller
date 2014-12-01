@@ -137,6 +137,7 @@ func QueueStatsJuniper(response []gosnmp.SnmpPDU, reporter_chan chan reporter.Qu
 	QStat.Hostname = Hostname
 	QStat.Vendor = Vendor
 	ReportDict := make(map[string]map[string]int64)
+	var DropCntr int64
 
 	for cntr := 0; cntr < len(response); cntr++ {
 		composite_oid := strings.Split(response[cntr].Name, ".1.3.6.1.4.1.2636.3.15.1.1.")
@@ -174,6 +175,7 @@ func QueueStatsJuniper(response []gosnmp.SnmpPDU, reporter_chan chan reporter.Qu
 						QStat.Counter = queue_counter
 						QStat.Action = "drop"
 						reporter_chan <- QStat
+						DropCntr += queue_counter
 					}
 				}
 			}
@@ -187,6 +189,15 @@ func QueueStatsJuniper(response []gosnmp.SnmpPDU, reporter_chan chan reporter.Qu
 		Msg.Data = JsonData
 		redisChan <- Msg
 	}
+	JsonData, err = json.Marshal(DropCntr)
+	if err == nil {
+		var Msg reporter.QueueMsg
+		Hostname = strings.Join([]string{Hostname, "hm"}, "-")
+		Msg.RouterName = Hostname
+		Msg.Data = JsonData
+		redisChan <- Msg
+	}
+
 }
 
 func QueueStatsCisco(response []gosnmp.SnmpPDU, reporter_chan chan reporter.QueueStat,
@@ -197,6 +208,7 @@ func QueueStatsCisco(response []gosnmp.SnmpPDU, reporter_chan chan reporter.Queu
 	QStat.Hostname = Hostname
 	QStat.Vendor = Vendor
 	ReportDict := make(map[string]map[string]int64)
+	var DropCntr int64
 
 	for cntr := 0; cntr < len(response); cntr++ {
 		composite_oid := strings.Split(response[cntr].Name, "1.3.6.1.4.1.9.9.166.1.15.1.1.")
@@ -232,6 +244,7 @@ func QueueStatsCisco(response []gosnmp.SnmpPDU, reporter_chan chan reporter.Queu
 						QStat.Counter = queue_counter
 						QStat.Action = "drop"
 						reporter_chan <- QStat
+						DropCntr += queue_counter
 					}
 				}
 			}
@@ -245,4 +258,13 @@ func QueueStatsCisco(response []gosnmp.SnmpPDU, reporter_chan chan reporter.Queu
 		Msg.Data = JsonData
 		redisChan <- Msg
 	}
+	JsonData, err = json.Marshal(DropCntr)
+	if err == nil {
+		var Msg reporter.QueueMsg
+		Hostname = strings.Join([]string{Hostname, "hm"}, "-")
+		Msg.RouterName = Hostname
+		Msg.Data = JsonData
+		redisChan <- Msg
+	}
+
 }
